@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard ABL Prime | Oficial</title>
+    <title>ABL Prime | Dashboard Oficial</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
@@ -12,16 +12,16 @@
 
     <div id="loader" class="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center">
         <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p class="font-bold text-slate-600 tracking-tighter uppercase">Sincronizando Dados da Planilha...</p>
+        <p class="font-bold text-slate-600 uppercase tracking-tighter">Sincronizando com a Planilha...</p>
     </div>
 
     <div class="max-w-[1400px] mx-auto p-4 md:p-8">
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div>
-                <h1 class="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Performance Comercial 2026</h1>
-                <p class="text-slate-500 font-bold">Salto Imperial | Quintas do Cerrado | Gran Life | ABL Brokers</p>
+                <h1 class="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Performance 2026</h1>
+                <p class="text-slate-500 font-bold uppercase text-xs tracking-widest">Gestão de Portfólio Real-Time</p>
             </div>
-            <select id="filtroProduto" class="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-bold text-slate-700 outline-none focus:border-blue-600 shadow-sm">
+            <select id="filtroProduto" class="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-bold text-slate-700 outline-none focus:border-blue-600 shadow-sm transition-all">
                 <option value="geral">CONSOLIDADO GERAL</option>
             </select>
         </header>
@@ -34,7 +34,7 @@
             </div>
 
             <div class="lg:col-span-1 flex flex-col gap-6">
-                <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
+                <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center border-t-4 border-t-blue-600">
                     <p class="text-[10px] font-black text-blue-600 uppercase mb-4 tracking-widest">VGV Realizado Acumulado</p>
                     <p id="txtVgvRealizado" class="text-4xl font-black text-slate-900 mb-2 tracking-tighter">R$ 0,0M</p>
                     <div class="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-3">
@@ -44,8 +44,8 @@
                 </div>
 
                 <div class="bg-slate-900 p-8 rounded-3xl shadow-2xl text-center border-b-4 border-orange-500">
-                    <p class="text-slate-500 text-[10px] font-black uppercase mb-2">Gap para Meta</p>
-                    <p id="txtGap" class="text-3xl font-black text-orange-400">R$ 0,0M</p>
+                    <p class="text-slate-500 text-[10px] font-black uppercase mb-2 tracking-widest text-center">Gap para Meta Anual</p>
+                    <p id="txtGap" class="text-3xl font-black text-orange-400 tracking-tighter">R$ 0,0M</p>
                 </div>
             </div>
         </div>
@@ -54,60 +54,53 @@
     <script>
         Chart.register(ChartDataLabels);
         
-        // Link CSV da sua planilha (utilizando proxy para garantir o acesso)
         const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGfqlq3KXkna2VgU25_kUWFz8CtEFsGCXOdpfOUM4e_BchIM5ebBHi2wuFQ_DunrIY-XAe5Z_-fSSn/pub?gid=267487522&single=true&output=csv';
 
         let fullData = [];
         let myChart;
 
         async function init() {
-            try {
-                // Tentativa com proxy para evitar bloqueios de navegador
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(SHEET_URL)}`;
-                const response = await fetch(proxyUrl);
-                const text = await response.text();
-                
-                if (text.includes("<!DOCTYPE html>")) throw new Error("O Google retornou HTML em vez de CSV.");
+            const urls = [
+                SHEET_URL,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(SHEET_URL)}`,
+                `https://corsproxy.io/?${encodeURIComponent(SHEET_URL)}`
+            ];
 
-                processCSV(text);
+            let success = false;
+            for (let url of urls) {
+                try {
+                    const response = await fetch(url);
+                    const text = await response.text();
+                    if (text && text.length > 50 && !text.includes("<!DOCTYPE html>")) {
+                        processCSV(text);
+                        success = true;
+                        break;
+                    }
+                } catch (e) { console.warn("Tentando rota alternativa..."); }
+            }
+
+            if (success) {
                 setupFilters();
                 renderDashboard('geral');
                 document.getElementById('loader').classList.add('hidden');
-            } catch (err) {
-                console.error(err);
-                document.getElementById('loader').innerHTML = `
-                    <div class="text-center p-8 bg-white rounded-3xl shadow-xl border border-red-100">
-                        <p class="text-red-600 font-black mb-2 uppercase text-xl">Erro de Sincronização</p>
-                        <p class="text-slate-500 text-sm mb-4">Verifique se a planilha está publicada como CSV.</p>
-                        <button onclick="location.reload()" class="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold">Recarregar</button>
-                    </div>`;
+            } else {
+                document.getElementById('loader').innerHTML = `<div class="p-8 text-center bg-white rounded-3xl shadow-xl"><p class="text-red-600 font-black text-xl mb-4 uppercase">Erro de Acesso</p><p class="text-slate-500 mb-6 font-medium text-sm">O Google ainda não liberou sua planilha para o Dashboard.<br>Verifique se o link publicado termina em <b>output=csv</b>.</p><button onclick="location.reload()" class="bg-blue-600 text-white px-8 py-2 rounded-xl font-bold uppercase text-xs">Tentar Novamente</button></div>`;
             }
         }
 
         function processCSV(csv) {
-            const lines = csv.split(/\r?\n/).filter(line => line.trim() !== "");
-            
-            // Detecta se o separador é vírgula ou ponto e vírgula
-            const header = lines[0];
-            const sep = header.includes(';') ? ';' : ',';
-
-            const parseNum = (val) => {
-                if (!val) return 0;
-                // Remove R$, pontos de milhar e troca vírgula decimal por ponto
-                let n = val.replace('R$', '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.').trim();
+            const lines = csv.split(/\r?\n/).filter(l => l.trim() !== "");
+            const sep = lines[0].includes(';') ? ';' : ',';
+            const clean = (v) => {
+                if(!v) return 0;
+                let n = v.replace('R$', '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.').trim();
                 return parseFloat(n) || 0;
             };
 
             fullData = lines.slice(1).map(line => {
                 const c = line.split(sep);
                 if (c.length < 6) return null;
-                return {
-                    produto: c[0].trim(),
-                    mes: c[1].trim(),
-                    vgvMeta: parseNum(c[2]),
-                    vgvReal: parseNum(c[3]),
-                    qtdReal: parseNum(c[5])
-                };
+                return { produto: c[0].trim(), mes: c[1].trim(), vgvMeta: clean(c[2]), vgvReal: clean(c[3]), qtdReal: clean(c[5]) };
             }).filter(d => d);
         }
 
@@ -171,3 +164,4 @@
     </script>
 </body>
 </html>
+
