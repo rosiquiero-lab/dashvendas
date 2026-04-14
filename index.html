@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ABL Prime | Dashboard de Performance</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+</head>
+<body class="bg-slate-50 font-sans">
+
+    <div id="loader" class="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center">
+        <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p class="font-bold text-slate-600 tracking-tighter uppercase">Sincronizando com Google Sheets...</p>
+    </div>
+
+    <div class="max-w-[1400px] mx-auto p-4 md:p-8">
+        
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4 no-print">
+            <div>
+                <h1 class="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Performance Comercial 2026</h1>
+                <p class="text-slate-500 font-bold">Relatório de Metas: VGV e Unidades</p>
+            </div>
+            <div class="flex gap-3">
+                <select id="filtroProduto" class="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-bold text-slate-700 outline-none focus:border-blue-600">
+                    <option value="geral">CONSOLIDADO GERAL</option>
+                </select>
+                <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 shadow-lg transition">IMPRIMIR PDF</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div class="lg:col-span-3 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-8">
+                    <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest">Comparativo Mensal (VGV em Milhões)</h2>
+                </div>
+                <div style="height: 500px; position: relative;">
+                    <canvas id="mainChart"></canvas>
+                </div>
+            </div>
+
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
+                    <p class="text-[10px] font-black text-blue-600 uppercase mb-4 tracking-widest">VGV Realizado Acumulado</p>
+                    <p id="txtVgvRealizado" class="text-4xl font-black text-slate-900 mb-2 tracking-tighter">R$ 0,0M</p>
+                    <div class="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-3 border border-slate-50">
+                        <div id="barraProgresso" class="bg-gradient-to-r from-blue-600 to-emerald-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                    <p id="txtPercentual" class="text-sm font-black text-emerald-600">0% Atingido</p>
+                </div>
+
+                <div class="bg-slate-900 p-8 rounded-3xl shadow-2xl text-center border-b-4 border-orange-500">
+                    <p class="text-slate-500 text-[10px] font-black uppercase mb-2 tracking-widest">Gap para Meta</p>
+                    <p id="txtGap" class="text-3xl font-black text-orange-400 tracking-tighter">R$ 0,0M</p>
+                    <p class="text-[9px] text-slate-500 mt-2 italic font-medium">Valor restante para atingir 100%</p>
+                </div>
+
+                <div id="cardDestaque" class="bg-white p-8 rounded-3xl shadow-sm border border-blue-100 text-center hidden">
+                    <p class="text-blue-600 text-[10px] font-black uppercase mb-2 tracking-widest">Produto em Destaque</p>
+                    <p id="nomeDestaque" class="text-xl font-black text-slate-800 leading-tight uppercase">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+        
+        // LINK CORRIGIDO PARA FORMATO DE DADOS (CSV)
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGfqlq3KXkna2VgU25_kUWFz8CtEFsGCXOdpfOUM4e_BchIM5ebBHi2wuFQ_DunrIY-XAe5Z_-fSSn/pub?output=csv';
+
+        let fullData = [];
+        let myChart;
+
+        async function init() {
+            try {
+                // Tenta buscar usando um proxy para evitar erro de CORS local
+                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL);
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) throw new Error("Erro na rede");
+                
+                const csvText = await response.text();
+                
+                // Validação: se o Google retornar HTML em vez de CSV
+                if (csvText.includes("<!DOCTYPE html>")) {
+                    throw new Error("O link fornecido é de uma página e não de dados. Certifique-se de publicar como CSV.");
+                }
+
+                parseData(csvText);
+                populateFilters();
+                renderDashboard('geral');
+                
+                setTimeout(() => {
+                    document.getElementById('loader').classList.add('hidden');
+                }, 1000);
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('loader').innerHTML = `
+                    <div class="text-center p-8 bg-white rounded-3xl shadow-xl border border-red-100 max-w-md">
+                        <p class="text-red-600 font-black mb-4 uppercase tracking-tighter text-xl">Falha na Sincronização</p>
+                        <p class="text-slate-500 text-sm mb-6 font-medium">Não conseguimos ler os dados da sua planilha. Verifique se ela está <b>'Publicada na Web'</b> no formato <b>'CSV'</b>.</p>
+                        <button onclick="location.reload()" class="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold">Tentar Novamente</button>
+                    </div>
+                `;
+            }
+        }
+
+        function parseData(csv) {
+            const lines = csv.split(/\r?\n/);
+            const processed = [];
+            
+            // Função para limpar valores financeiros brasileiros (R$ 1.000,00 -> 1000.00)
+            const cleanValue = (val) => {
+                if (!val) return 0;
+                let clean = val.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+                return parseFloat(clean) || 0;
+            };
+
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length >= 6) {
+                    processed.push({
+                        produto: cols[0].trim(),
+                        mes: cols[1].trim(),
+                        vgvMeta: cleanValue(cols[2]),
+                        vgvReal: cleanValue(cols[3]),
+                        qtdMeta: cleanValue(cols[4]),
+                        qtdReal: cleanValue(cols[5])
+                    });
+                }
+            }
+            fullData = processed;
+        }
+
+        function populateFilters() {
+            const produtos = [...new Set(fullData.map(d => d.produto))];
+            const select = document.getElementById('filtroProduto');
+            produtos.forEach(p => {
+                if (p) {
+                    const opt = document.createElement('option');
+                    opt.value = p;
+                    opt.innerText = p.toUpperCase();
+                    select.appendChild(opt);
+                }
+            });
+        }
+
+        function renderDashboard(filtro) {
+            const mesesLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            let filtered = filtro === 'geral' ? fullData : fullData.filter(d => d.produto === filtro);
+
+            const vgvMeta = mesesLabels.map(m => filtered.filter(d => d.mes.toLowerCase().includes(m.toLowerCase())).reduce((a, b) => a + b.vgvMeta, 0));
+            const vgvReal = mesesLabels.map(m => filtered.filter(d => d.mes.toLowerCase().includes(m.toLowerCase())).reduce((a, b) => a + b.vgvReal, 0));
+            const qtdReal = mesesLabels.map(m => filtered.filter(d => d.mes.toLowerCase().includes(m.toLowerCase())).reduce((a, b) => a + b.qtdReal, 0));
+
+            if (myChart) myChart.destroy();
+            
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: mesesLabels,
+                    datasets: [
+                        { label: 'REALIZADO', data: vgvReal, backgroundColor: '#2563eb', borderRadius: 8, unidades: qtdReal, order: 2 },
+                        { label: 'META', data: vgvMeta, backgroundColor: '#f1f5f9', borderRadius: 8, unidades: [], order: 3 },
+                        { label: 'TENDÊNCIA', data: vgvReal.map(v => v > 0 ? v : null), type: 'line', borderColor: '#f59e0b', borderWidth: 3, pointRadius: 4, fill: false, order: 1, datalabels: { display: false } }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { font: { weight: 'bold' } } },
+                        datalabels: {
+                            anchor: 'end', align: 'top', offset: 4,
+                            formatter: (val, ctx) => {
+                                if (!val || val === 0) return '';
+                                let lbl = val.toFixed(1) + 'M';
+                                if (ctx.datasetIndex === 0) lbl += `\n(${ctx.dataset.unidades[ctx.dataIndex]}u)`;
+                                return lbl;
+                            },
+                            font: { size: 10, weight: '900' }, textAlign: 'center', color: '#1e293b'
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, border: {display: false}, ticks: { callback: v => 'R$' + v + 'M', font: { weight: 'bold' } } },
+                        x: { grid: { display: false }, ticks: { font: { weight: 'bold' } } }
+                    }
+                }
+            });
+
+            // Atualização dos Indicadores
+            const totalReal = vgvReal.reduce((a,b)=>a+b, 0);
+            const totalMeta = vgvMeta.reduce((a,b)=>a+b, 0);
+            const tPerc = totalMeta > 0 ? (totalReal / totalMeta) * 100 : 0;
+
+            document.getElementById('txtVgvRealizado').innerText = `R$ ${totalReal.toFixed(1)}M`;
+            document.getElementById('barraProgresso').style.width = `${Math.min(tPerc, 100)}%`;
+            document.getElementById('txtPercentual').innerText = `${tPerc.toFixed(1)}% DA META ALCANÇADA`;
+            document.getElementById('txtGap').innerText = `R$ ${Math.max(0, totalMeta - totalReal).toFixed(1)}M`;
+
+            // Lógica do Card de Destaque
+            if (filtro === 'geral') {
+                let pList = [...new Set(fullData.map(d => d.produto))];
+                let top = { nome: '-', v: 0 };
+                pList.forEach(p => {
+                    let v = fullData.filter(d => d.produto === p).reduce((a,b)=>a+b.vgvReal, 0);
+                    if(v > top.v) top = { nome: p, v: v };
+                });
+                document.getElementById('nomeDestaque').innerText = top.nome;
+                document.getElementById('cardDestaque').classList.remove('hidden');
+            } else {
+                document.getElementById('cardDestaque').classList.add('hidden');
+            }
+        }
+
+        document.getElementById('filtroProduto').addEventListener('change', (e) => renderDashboard(e.target.value));
+        
+        // Iniciar
+        init();
+    </script>
+
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; }
+            .shadow-sm, .shadow-2xl { box-shadow: none !important; border: 1px solid #eee !important; }
+        }
+    </style>
+</body>
+</html>
