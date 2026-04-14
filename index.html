@@ -2,123 +2,108 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard Gestão | ABL Prime</title>
+    <title>Dashboard ABL Prime</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
 </head>
-<body class="bg-slate-50 font-sans">
+<body class="bg-slate-50 p-4 md:p-8">
 
-    <div id="loader" class="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center">
-        <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p class="text-slate-400 font-black text-xs uppercase tracking-widest">Sincronizando Base de Dados...</p>
-    </div>
+    <div id="status" class="text-center p-4 text-xs font-bold text-slate-400 uppercase">Sincronizando dados...</div>
 
-    <div class="max-w-[1400px] mx-auto p-4 md:p-8">
-        <header class="flex justify-between items-center mb-10">
-            <h1 class="text-2xl font-black text-slate-800 tracking-tighter uppercase italic">Performance Comercial 2026</h1>
-            <select id="filtroProduto" class="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-bold text-slate-700 outline-none">
-                <option value="geral">CONSOLIDADO GERAL</option>
-            </select>
-        </header>
+    <div class="max-w-[1200px] mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-xl font-black text-slate-800 uppercase italic">Performance 2026</h1>
+            <select id="filtro" class="border-2 border-slate-200 rounded-lg px-3 py-1 font-bold text-slate-600 outline-none"></select>
+        </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            <div class="lg:col-span-3 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                <div style="height: 500px;"><canvas id="mainChart"></canvas></div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <canvas id="chart" style="height: 400px;"></canvas>
             </div>
-            <div class="lg:col-span-1 flex flex-col gap-6">
-                <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
-                    <p class="text-[10px] font-black text-blue-600 uppercase mb-4 tracking-widest">VGV Realizado</p>
-                    <p id="txtVgvRealizado" class="text-4xl font-black text-slate-900 mb-2 tracking-tighter">R$ 0,0M</p>
-                    <div class="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-3"><div id="barraProgresso" class="bg-blue-600 h-full transition-all duration-1000" style="width: 0%"></div></div>
-                    <p id="txtPercentual" class="text-sm font-black text-emerald-600">0% Atingido</p>
+            <div class="space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center">
+                    <p class="text-[10px] font-black text-blue-600 uppercase mb-2">Realizado Total</p>
+                    <p id="vReal" class="text-3xl font-black text-slate-900">R$ 0,0M</p>
                 </div>
-                <div class="bg-slate-900 p-8 rounded-3xl shadow-2xl text-center border-b-4 border-orange-500">
-                    <p class="text-slate-500 text-[10px] font-black uppercase mb-2">Gap para Meta</p>
-                    <p id="txtGap" class="text-3xl font-black text-orange-400">R$ 0,0M</p>
+                <div class="bg-slate-900 p-6 rounded-2xl shadow-sm text-center">
+                    <p class="text-slate-400 text-[10px] font-black uppercase mb-2">Gap para Meta</p>
+                    <p id="vGap" class="text-3xl font-black text-orange-400">R$ 0,0M</p>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        Chart.register(ChartDataLabels);
-        
-        // Link CSV DIRETO
+        // LINK DA SUA PLANILHA
         const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGfqlq3KXkna2VgU25_kUWFz8CtEFsGCXOdpfOUM4e_BchIM5ebBHi2wuFQ_DunrIY-XAe5Z_-fSSn/pub?gid=267487522&single=true&output=csv';
 
-        async function init() {
+        async function dataSync() {
             try {
-                // Força o navegador a ignorar o cache e buscar dado novo
-                const response = await fetch(URL + '&cachebuster=' + new Date().getTime());
-                const csv = await response.text();
+                // O segredo para não dar erro: usar um proxy que libera o acesso
+                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(URL)}`);
+                const csv = await res.text();
                 
-                if (csv.includes("<!DOCTYPE html>")) throw new Error();
-
                 const lines = csv.split(/\r?\n/).filter(l => l.trim() !== "");
-                const sep = lines[0].includes(';') ? ';' : ',';
-                const clean = v => parseFloat(v?.replace('R$', '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.') || 0);
+                const clean = v => parseFloat(v?.replace('R$', '').replace(/\./g, '').replace(',', '.').trim() || 0);
 
-                window.fullData = lines.slice(1).map(line => {
-                    const c = line.split(sep);
-                    return { produto: c[0], mes: c[1], vgvMeta: clean(c[2]), vgvReal: clean(c[3]), qtdReal: clean(c[5]) };
-                }).filter(d => d.produto);
+                window.db = lines.slice(1).map(l => {
+                    const c = l.split(lines[0].includes(';') ? ';' : ',');
+                    return { p: c[0], m: c[1], meta: clean(c[2]), real: clean(c[3]), u: clean(c[5]) };
+                }).filter(d => d.p);
 
-                // Popular Filtro e Renderizar
-                const prods = [...new Set(window.fullData.map(d => d.produto))];
-                prods.forEach(p => {
-                    const opt = document.createElement('option');
-                    opt.value = p; opt.innerText = p.toUpperCase();
-                    document.getElementById('filtroProduto').appendChild(opt);
+                // Setup Filtro
+                const f = document.getElementById('filtro');
+                f.innerHTML = '<option value="all">CONSOLIDADO GERAL</option>';
+                [...new Set(window.db.map(x => x.p))].forEach(p => {
+                    f.innerHTML += `<option value="${p}">${p.toUpperCase()}</option>`;
                 });
 
-                renderDashboard('geral');
-                document.getElementById('loader').remove();
+                update('all');
+                document.getElementById('status').innerText = 'Dados Atualizados';
             } catch (e) {
-                document.getElementById('loader').innerHTML = `<p class="text-red-500 font-bold">O Google bloqueou a conexão. <br> Abra o link da planilha em outra aba e atualize aqui.</p>`;
+                document.getElementById('status').innerText = 'Erro ao carregar planilha';
             }
         }
 
-        function renderDashboard(filtro) {
+        function update(sel) {
             const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-            let d = filtro === 'geral' ? window.fullData : window.fullData.filter(x => x.produto === filtro);
+            const d = sel === 'all' ? window.db : window.db.filter(x => x.p === sel);
 
-            const vMeta = meses.map(m => d.filter(x => x.mes.includes(m)).reduce((a, b) => a + b.vgvMeta, 0));
-            const vReal = meses.map(m => d.filter(x => x.mes.includes(m)).reduce((a, b) => a + b.vgvReal, 0));
-            const qReal = meses.map(m => d.filter(x => x.mes.includes(m)).reduce((a, b) => a + b.qtdReal, 0));
+            const vM = meses.map(m => d.filter(x => x.m.includes(m)).reduce((a,b) => a + b.meta, 0));
+            const vR = meses.map(m => d.filter(x => x.m.includes(m)).reduce((a,b) => a + b.real, 0));
+            const uR = meses.map(m => d.filter(x => x.m.includes(m)).reduce((a,b) => a + b.u, 0));
 
-            if (window.chartInst) window.chartInst.destroy();
-            window.chartInst = new Chart(document.getElementById('mainChart'), {
+            if (window.myChart) window.myChart.destroy();
+            window.myChart = new Chart(document.getElementById('chart'), {
                 type: 'bar',
                 data: {
                     labels: meses,
                     datasets: [
-                        { label: 'REALIZADO', data: vReal, backgroundColor: '#2563eb', borderRadius: 8, unidades: qReal },
-                        { label: 'META', data: vMeta, backgroundColor: '#f1f5f9', borderRadius: 8, unidades: [] }
+                        { label: 'REAL', data: vR, backgroundColor: '#2563eb', borderRadius: 5, u: uR },
+                        { label: 'META', data: vM, backgroundColor: '#e2e8f0', borderRadius: 5, u: [] }
                     ]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
                     plugins: {
                         datalabels: {
-                            anchor: 'end', align: 'top',
-                            formatter: (v, ctx) => v > 0 ? v.toFixed(1) + 'M\n(' + ctx.dataset.unidades[ctx.dataIndex] + 'u)' : '',
-                            font: { weight: 'bold', size: 10 }, textAlign: 'center'
+                            anchor: 'end', align: 'top', 
+                            formatter: (v, ctx) => v > 0 ? v.toFixed(1)+'M' : '',
+                            font: { weight: 'bold', size: 9 }
                         }
                     }
                 }
             });
 
-            const tReal = vReal.reduce((a,b)=>a+b, 0);
-            const tMeta = vMeta.reduce((a,b)=>a+b, 0);
-            document.getElementById('txtVgvRealizado').innerText = `R$ ${tReal.toFixed(1)}M`;
-            document.getElementById('txtGap').innerText = `R$ ${Math.max(0, tMeta - tReal).toFixed(1)}M`;
-            document.getElementById('txtPercentual').innerText = `${((tReal/tMeta)*100).toFixed(1)}% ATINGIDO`;
-            document.getElementById('barraProgresso').style.width = Math.min((tReal/tMeta)*100, 100) + '%';
+            const totalR = vR.reduce((a,b)=>a+b, 0);
+            const totalM = vM.reduce((a,b)=>a+b, 0);
+            document.getElementById('vReal').innerText = `R$ ${totalR.toFixed(1)}M`;
+            document.getElementById('vGap').innerText = `R$ ${Math.max(0, totalM - totalR).toFixed(1)}M`;
         }
 
-        document.getElementById('filtroProduto').addEventListener('change', e => renderDashboard(e.target.value));
-        init();
+        document.getElementById('filtro').addEventListener('change', e => update(e.target.value));
+        Chart.register(ChartDataLabels);
+        dataSync();
     </script>
 </body>
 </html>
